@@ -1,0 +1,81 @@
+import numpy as np
+import quimb.tensor as qtn
+import time
+import csv
+
+def create_sin_tensor(n, precision):
+    # Step 1: Create the grid points (0, 0.1, 0.2, ..., 1.0)
+    start_time = time.time()
+    grid = np.arange(0, 1 + precision, precision)
+    # Generate random coefficients a1, a2, ..., an within range [amin, amax]
+    a = amin + (amax - amin) * np.random.rand(n)
+    # Step 3: Initialize the tensor for f(x1, ..., xn)
+    tensor_size = [len(grid)] * n  # Tensor will be grid^n in size
+    tensor_values = np.zeros(tensor_size)
+    # Step 4: Populate the tensor by evaluating sin(a1*x1 + ... + an*xn) for each grid point combination
+    for idx in np.ndindex(*tensor_size):  # Iterate over all possible combinations of grid points
+        x = np.array([grid[i] for i in idx])  # Get the grid values x1, x2, ..., xn
+        tensor_values[idx] = np.sin(np.dot(a, x))  # Compute sin(a1*x1 + a2*x2 + ... + an*xn)
+    create_time = time.time() - start_time
+    print(f"n={n}, create_time={create_time}")
+    # Step 5: Create the Quimb tensor with the appropriate indices
+    tensor_inds = [f'x{i+1}' for i in range(n)]  # Create indices x1, x2, ..., xn
+    tensor = qtn.Tensor(tensor_values, inds=tensor_inds, tags=['f1'])
+    #tensor = qtn.TensorNetwork([tensor])  # Convert the tensor to a tensor network
+    return tensor, a, grid
+
+# Example usage
+
+precision = 0.1  # Precision for grid points
+amin = 0  # Minimum coefficient value
+amax = 1  # Maximum coefficient value
+
+
+def create_and_decompose_sin_func_tensor(n):
+    start_time = time.time()
+    tensor, a, grid = create_sin_tensor(n, precision)
+    create_time = time.time() - start_time
+
+    tensors = []
+    remaining_tensor = tensor
+
+
+    for i in range(n - 1):
+        if i == 0:
+            split_ind = 1
+        else:
+            split_ind = 2
+        left_inds = list(remaining_tensor.inds[:split_ind]) # Split on the current index
+        right_inds = list(remaining_tensor.inds[split_ind:]) # Keep remaining indices for the right tensor
+        # Perform the split
+        left_tensor, remaining_tensor = remaining_tensor.split(left_inds, right_inds = right_inds, cutoff=1e-6)
+
+        # Add the left tensor to the list of decomposed tensors
+        tensors.append(left_tensor)
+
+    # Append the final remaining tensor
+    tensors.append(remaining_tensor)
+    tensor_train = qtn.TensorNetwork(tensors)
+    decompose_time = time.time() - start_time
+    tensor_list = tensor_train.tensors
+    ranks = [tensor.shape[0] for tensor in tensor_list[:-1]] + [tensor_list[-1].shape[1]]  # Last tensor shape[1]
+
+    return tensor_train, create_time, decompose_time, ranks
+
+# Prepare to save results
+csv_file = 'tensor_times.csv'
+check_list = [8, 9, 10]
+
+with open(csv_file, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(['n', 'create_time', 'decompose_time', 'ranks'])  # Header row
+
+    # Run the function for each value in check_list and save the results
+    for n in check_list:
+        tensor_train, create_time, decompose_time, ranks = create_and_decompose_sin_func_tensor(n)
+        writer.writerow([n, create_time, decompose_time, ranks])
+        print(f"n={n}, create_time={create_time}, decompose_time={decompose_time}, ranks={ranks}")
+
+print(f"Results saved to {csv_file}")
+    
+    
